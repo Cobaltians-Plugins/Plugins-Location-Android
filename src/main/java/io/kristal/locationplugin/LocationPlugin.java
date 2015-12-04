@@ -45,6 +45,8 @@ import android.util.Log;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+
 
 public final class LocationPlugin extends CobaltAbstractPlugin implements LocationListener {
 
@@ -67,6 +69,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private static final String ALTITUDE = "altitude";
     private static final String ACCURACY = "accuracy";
 
+    private static final float ACCURACY_DEFAULT_VALUE = 100;
+
     private static final String GET_LOCATION = "getLocation";
     private static final String GET_LONGITUDE = "getLongitude";
     private static final String GET_LATITUDE = "getLatitude";
@@ -75,7 +79,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
     private boolean mFoundProvider = true;
     private LocationManager mLocationManager;
-    private String mProvider;
+    private ArrayList<String> mProviders;
     private CobaltFragment mFragment;
 
     private boolean mLocation = false;
@@ -127,7 +131,9 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
                         data.put(CODE, NULL);
                         data.put(TEXT, "No location found, please wait");
                         Log.d(TAG, "call requestLocationUpdate");
-                        mLocationManager.requestLocationUpdates(mProvider,400, 1, this);
+                        for (String provider : mProviders) {
+                            mLocationManager.requestLocationUpdates(provider, 400, 1, this);
+                        }
                     }
                     else {
                         data.put(CODE, DISABLED);
@@ -159,22 +165,41 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     }
 
     private Location getLocation(CobaltPluginWebContainer webContainer) {
-        mProvider = getLocationProvider(webContainer);
-        if (mProvider == null) {
+        mProviders = getProviders(webContainer);
+        if (mProviders.size() == 0) {
             mFoundProvider = false;
             return null;
         }
         else {
-            Location location = mLocationManager.getLastKnownLocation(mProvider);
             mFoundProvider = true;
+
+            Location location = null;
+            for (String provider : mProviders) {
+                Location providerLocation = mLocationManager.getLastKnownLocation(provider);
+
+                if (providerLocation != null
+                    && providerLocation.getAccuracy() < ACCURACY_DEFAULT_VALUE) {
+                    location = providerLocation;
+                    break;
+                }
+            }
+
             return location;
         }
     }
 
-    private String getLocationProvider(CobaltPluginWebContainer webContainer) {
+    private ArrayList<String> getProviders(CobaltPluginWebContainer webContainer) {
+        ArrayList<String> providers = new ArrayList<>();
         Activity activity = webContainer.getActivity();
         mLocationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
-        return mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ? LocationManager.GPS_PROVIDER : (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ? LocationManager.NETWORK_PROVIDER : null);
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            providers.add(LocationManager.GPS_PROVIDER);
+        }
+        if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            providers.add(LocationManager.NETWORK_PROVIDER);
+        }
+
+        return providers;
     }
 
     private void sendLocationFound (Location location) {
@@ -206,8 +231,10 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
     @Override
     public void onLocationChanged(Location location) {
-        sendLocationFound(location);
-        mLocationManager.removeUpdates(this);
+        if (location.getAccuracy() < ACCURACY_DEFAULT_VALUE) {
+            sendLocationFound(location);
+            mLocationManager.removeUpdates(this);
+        }
     }
 
     @Override
