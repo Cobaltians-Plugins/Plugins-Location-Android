@@ -46,6 +46,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Date;
 
 
 public final class LocationPlugin extends CobaltAbstractPlugin implements LocationListener {
@@ -70,6 +71,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private static final String ACCURACY = "accuracy";
 
     private static final float ACCURACY_DEFAULT_VALUE = 100;
+    private static final float TIMESTAMP_DEFAULT_VALUE = 30 * 60 * 1000;
 
     private static final String GET_LOCATION = "getLocation";
     private static final String GET_LONGITUDE = "getLongitude";
@@ -178,7 +180,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
                 Location providerLocation = mLocationManager.getLastKnownLocation(provider);
 
                 if (providerLocation != null
-                    && providerLocation.getAccuracy() < ACCURACY_DEFAULT_VALUE) {
+                    && providerLocation.getAccuracy() < ACCURACY_DEFAULT_VALUE
+                    && providerLocation.getTime() < (new Date().getTime() - TIMESTAMP_DEFAULT_VALUE)) {
                     location = providerLocation;
                     break;
                 }
