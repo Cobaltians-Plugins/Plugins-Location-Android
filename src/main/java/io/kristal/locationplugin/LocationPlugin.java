@@ -52,6 +52,8 @@ import org.json.JSONObject;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public final class LocationPlugin extends CobaltAbstractPlugin implements LocationListener, ActivityCompat.OnRequestPermissionsResultCallback {
 
@@ -74,6 +76,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private static final String kJSMode = "mode";
     private static final String kJSTimeout = "timeout";
     private static final String kJSTimestamp = "timestamp";
+    private static final String kJSLocation = "loc";
     private static final String kJSLongitude = "lng";
     private static final String kJSLatitude = "lat";
     private static final String kJSStatus = "status";
@@ -98,6 +101,16 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private WeakReference<CobaltFragment> mFragment;
     private LocationManager mLocationManager;
     private ArrayList<String> mProviders;
+    private Timer mTimer;
+    private TimerTask mTimerTask = new TimerTask() {
+        @Override
+        public void run() {
+            mLocationManager.removeUpdates(LocationPlugin.this);
+
+            sendStatus(STATUS_TIMEOUT);
+        }
+    };
+    private Location mMostAccurateLocation;
 
     protected static LocationPlugin sInstance;
 
@@ -194,10 +207,19 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     }
 
     private void startLocationUpdates() {
+        mMostAccurateLocation = null;
+
         for (String provider : mProviders) {
             Location location = mLocationManager.getLastKnownLocation(provider);
 
             if (location != null) {
+                if (mMostAccurateLocation == null) {
+                    mMostAccurateLocation = location;
+                }
+                else if (location.getAccuracy() < mMostAccurateLocation.getAccuracy()) {
+                    mMostAccurateLocation = location;
+                }
+
                 if (MODE_ALL.equals(mMode)) {
                     sendLocation(location);
                 }
@@ -213,11 +235,19 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
             // TODO: see if another method is more convenient
             mLocationManager.requestLocationUpdates(provider, mFrequency, mAccuracy / 2, this);
         }
+
+        if (mTimeout > 0) {
+            mTimer = new Timer();
+            mTimer.schedule(mTimerTask, mTimeout);
+        }
     }
 
     private void stopLocationUpdates() {
         if (mLocationManager != null) {
             mLocationManager.removeUpdates(this);
+        }
+        if (mTimer != null) {
+            mTimer.cancel();
         }
     }
 
@@ -253,6 +283,15 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
             try {
                 JSONObject data = new JSONObject();
                 data.put(kJSStatus, status);
+
+                if (mMostAccurateLocation != null) {
+                    JSONObject loc = new JSONObject();
+                    loc.put(kJSLongitude, mMostAccurateLocation.getLongitude());
+                    loc.put(kJSLatitude, mMostAccurateLocation.getLatitude());
+                    loc.put(kJSAccuracy, mMostAccurateLocation.getAccuracy());
+                    loc.put(kJSTimestamp, mMostAccurateLocation.getTime());
+                    data.put(kJSLocation, loc);
+                }
 
                 JSONObject message = new JSONObject();
                 message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
@@ -319,13 +358,24 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
     @Override
     public void onLocationChanged(Location location) {
+        if (mMostAccurateLocation == null) {
+            mMostAccurateLocation = location;
+        }
+        else if (location.getAccuracy() < mMostAccurateLocation.getAccuracy()) {
+            mMostAccurateLocation = location;
+        }
+
         if (MODE_ALL.equals(mMode)) {
             sendLocation(location);
         }
         else if (location.getAccuracy() < mAccuracy
                 && location.getTime() < (new Date().getTime() - mTimestamp)) {
-            sendLocation(location);
+            if (mTimer != null) {
+                mTimer.cancel();
+            }
             mLocationManager.removeUpdates(this);
+
+            sendLocation(location);
         }
     }
 
@@ -345,20 +395,20 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
     @Override
     public void onProviderEnabled(String provider) {
-        if (mProviders != null
-            && ! mProviders.contains(provider)) {
+        if (! mProviders.contains(provider)) {
             mProviders.add(provider);
         }
     }
 
     @Override
     public void onProviderDisabled(String provider) {
-        if (mProviders != null) {
-            mProviders.remove(provider);
-        }
-
+        mProviders.remove(provider);
         if (mProviders.size() == 0) {
             sendStatus(STATUS_DISABLED);
+
+            if (mTimer != null) {
+                mTimer.cancel();
+            }
         }
     }
 }
