@@ -82,7 +82,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private static final String kJSStatus = "status";
 
     private static final float ACCURACY_DEFAULT_VALUE = 100;
-    private static final long FREQUENCY_DEFAULT_VALUE = 400;
+    private static final long FREQUENCY_DEFAULT_VALUE = 0;
     private static final String MODE_ALL = "all";
     private static final String MODE_FILTER = "filter";
     private static final String STATUS_DISABLED = "disabled";
@@ -102,14 +102,6 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private LocationManager mLocationManager;
     private ArrayList<String> mProviders;
     private Timer mTimer;
-    private TimerTask mTimerTask = new TimerTask() {
-        @Override
-        public void run() {
-            mLocationManager.removeUpdates(LocationPlugin.this);
-
-            sendStatus(STATUS_TIMEOUT);
-        }
-    };
     private Location mMostAccurateLocation;
 
     protected static LocationPlugin sInstance;
@@ -233,12 +225,19 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
         for (String provider : mProviders) {
             // TODO: see if another method is more convenient
-            mLocationManager.requestLocationUpdates(provider, mFrequency, mAccuracy / 2, this);
+            mLocationManager.requestLocationUpdates(provider, 0, 0, this);
         }
 
         if (mTimeout > 0) {
             mTimer = new Timer();
-            mTimer.schedule(mTimerTask, mTimeout);
+            mTimer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    mLocationManager.removeUpdates(LocationPlugin.this);
+
+                    sendStatus(STATUS_TIMEOUT);
+                }
+            }, mTimeout);
         }
     }
 
