@@ -29,76 +29,83 @@
 
 package io.kristal.locationplugin;
 
-import android.location.LocationListener;
-import android.os.Bundle;
 import fr.cobaltians.cobalt.Cobalt;
 import fr.cobaltians.cobalt.fragments.CobaltFragment;
 import fr.cobaltians.cobalt.plugin.CobaltAbstractPlugin;
 import fr.cobaltians.cobalt.plugin.CobaltPluginWebContainer;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.LocationProvider;
+import android.os.Bundle;
+import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Date;
 
-
-public final class LocationPlugin extends CobaltAbstractPlugin implements LocationListener {
+public final class LocationPlugin extends CobaltAbstractPlugin implements LocationListener, ActivityCompat.OnRequestPermissionsResultCallback {
 
     // TAG
     private static final String TAG = LocationPlugin.class.getSimpleName();
 
-    /**********************************************************
+    /***********************************************************************************************
+     *
      * MEMBERS
-     **********************************************************/
+     *
+     **********************************************************************************************/
 
-    private static final String LOCATION = "location";
-    private static final String ERROR = "error";
-    private static final String TEXT = "text";
-    private static final String CODE = "code";
-    private static final String DISABLED = "disabled";
-    private static final String NULL = "null";
-
-    private static final String LONGITUDE = "longitude";
-    private static final String LATITUDE = "latitude";
-    private static final String ALTITUDE = "altitude";
-    private static final String ACCURACY = "accuracy";
+    private static final String JSPluginName = "location";
+    private static final String JSActionStartLocation = "startLocation";
+    private static final String JSActionStopLocation = "stopLocation";
+    private static final String JSActionOnLocationChanged = "onLocationChanged";
+    private static final String JSActionOnStatusChanged = "onStatusChanged";
+    private static final String kJSAccuracy = "accuracy";
+    private static final String kJSFrequency = "frequency";
+    private static final String kJSMode = "mode";
+    private static final String kJSTimeout = "timeout";
+    private static final String kJSTimestamp = "timestamp";
+    private static final String kJSLongitude = "lng";
+    private static final String kJSLatitude = "lat";
+    private static final String kJSStatus = "status";
 
     private static final float ACCURACY_DEFAULT_VALUE = 100;
-    private static final float TIMESTAMP_DEFAULT_VALUE = 30 * 60 * 1000;
+    private static final long FREQUENCY_DEFAULT_VALUE = 400;
+    private static final String MODE_ALL = "all";
+    private static final String MODE_FILTER = "filter";
+    private static final String STATUS_DISABLED = "disabled";
+    private static final String STATUS_REFUSED = "refused";
+    private static final String STATUS_TIMEOUT = "timeout";
+    private static final long TIMEOUT_DEFAULT_VALUE = 0;
+    private static final long TIMESTAMP_DEFAULT_VALUE = 2 * 60 * 1000;
 
-    private static final String GET_LOCATION = "getLocation";
-    private static final String GET_LONGITUDE = "getLongitude";
-    private static final String GET_LATITUDE = "getLatitude";
-    private static final String GET_ALTITUDE = "getAltitude";
-    private static final String GET_ACCURACY = "getAccuracy";
+    private float mAccuracy;
+    private long mFrequency;
+    private String mMode;
+    private long mTimeout;
+    private long mTimestamp;
 
-    private boolean mFoundProvider = true;
+    private WeakReference<Activity> mActivity;
+    private WeakReference<CobaltFragment> mFragment;
     private LocationManager mLocationManager;
     private ArrayList<String> mProviders;
-    private CobaltFragment mFragment;
-
-    private boolean mLocation = false;
-    private boolean mLongitude = false;
-    private boolean mLatitude = false;
-    private boolean mAltitude = false;
-    private boolean mAccuracy = false;
-
-    /*******************************************************************************************************
-     * MEMBERS
-     *******************************************************************************************************/
 
     protected static LocationPlugin sInstance;
 
-    /**************************************************************************************
-     * CONSTRUCTORS
-     **************************************************************************************/
+    /***********************************************************************************************
+     *
+     * CONSTRUCTOR
+     *
+     **********************************************************************************************/
 
     public static CobaltAbstractPlugin getInstance(CobaltPluginWebContainer webContainer) {
         if (sInstance == null) {
@@ -110,148 +117,245 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
         return sInstance;
     }
 
-
-    /***********************************************************************************************************
-     * OVERRIDEN METHODS
-     ***********************************************************************************************************/
+    /***********************************************************************************************
+     *
+     * COBALT
+     *
+     **********************************************************************************************/
 
     @Override
     public void onMessage(CobaltPluginWebContainer webContainer, JSONObject message) {
-        mFragment = webContainer.getFragment();
-        Location location = getLocation(webContainer);
         try {
             String action = message.getString(Cobalt.kJSAction);
-            if (selectionOfAction(action)) {
-                if (location != null) sendLocationFound(location);
-                else {
-                    JSONObject resultLocation = new JSONObject();
-                    resultLocation.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                    resultLocation.put(Cobalt.kJSPluginName, LOCATION);
-                    JSONObject data = new JSONObject();
-                    data.put(ERROR, true);
-                    if (mFoundProvider) {
-                        data.put(CODE, NULL);
-                        data.put(TEXT, "No location found, please wait");
-                        Log.d(TAG, "call requestLocationUpdate");
-                        for (String provider : mProviders) {
-                            mLocationManager.requestLocationUpdates(provider, 400, 1, this);
+
+            switch(action) {
+                case JSActionStartLocation:
+                    JSONObject data = message.getJSONObject(Cobalt.kJSData);
+                    mMode = data.getString(kJSMode);
+                    if (! (MODE_ALL.equals(mMode) || MODE_FILTER.equals(mMode))) {
+                        throw new JSONException(TAG + " - onMessage: unknown mode " + mMode);
+                    }
+                    mAccuracy = (float) data.optDouble(kJSAccuracy, ACCURACY_DEFAULT_VALUE);
+                    mFrequency = data.optLong(kJSFrequency, FREQUENCY_DEFAULT_VALUE);
+                    mTimeout = data.optLong(kJSTimeout, TIMEOUT_DEFAULT_VALUE);
+                    mTimestamp = data.optLong(kJSTimestamp, TIMESTAMP_DEFAULT_VALUE);
+
+                    mActivity = new WeakReference<>(webContainer.getActivity());
+                    mFragment = new WeakReference<>(webContainer.getFragment());
+
+                    Activity activity = mActivity.get();
+                    if (activity != null) {
+                        getActiveProviders(activity);
+                        if (mProviders.size() != 0) {
+                            requestLocationPermission(activity);
+                        }
+                        else {
+                            sendStatus(STATUS_DISABLED);
                         }
                     }
-                    else {
-                        data.put(CODE, DISABLED);
-                        data.put(TEXT, "Location detection has been disabled by user");
+                    break;
+                case JSActionStopLocation:
+                    stopLocationUpdates();
+                    break;
+                default:
+                    if (Cobalt.DEBUG) {
+                        Log.d(TAG, "onMessage: unknown action " + action);
                     }
-                    resultLocation.put(Cobalt.kJSData, data);
-                    mFragment.sendMessage(resultLocation);
-                }
+                    break;
             }
-            else
-                if (Cobalt.DEBUG) Log.d(TAG, "ERROR - can't found action in message : " + message.toString());
         }
         catch (JSONException exception) {
             if (Cobalt.DEBUG) {
-                if (Cobalt.DEBUG) Log.d(TAG, "ERROR - can't find a good key in : " + message.toString());
+                Log.d(TAG, "onMessage: action field missing or is not a string or data field is missing or is not an object. " + message.toString());
+            }
+            exception.printStackTrace();
+        }
+    }
+
+    /***********************************************************************************************
+     *
+     * METHODS
+     *
+     **********************************************************************************************/
+
+    private void getActiveProviders(Context context) {
+        mProviders = new ArrayList<>();
+
+        mLocationManager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (mLocationManager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+            mProviders.add(LocationManager.PASSIVE_PROVIDER);
+        }
+        if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            mProviders.add(LocationManager.NETWORK_PROVIDER);
+        }
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            mProviders.add(LocationManager.GPS_PROVIDER);
+        }
+    }
+
+    private void startLocationUpdates() {
+        for (String provider : mProviders) {
+            Location location = mLocationManager.getLastKnownLocation(provider);
+
+            if (location != null) {
+                if (MODE_ALL.equals(mMode)) {
+                    sendLocation(location);
+                }
+                else if (location.getAccuracy() < mAccuracy
+                        && location.getTime() < (new Date().getTime() - mTimestamp)) {
+                    sendLocation(location);
+                    return;
+                }
+            }
+        }
+
+        for (String provider : mProviders) {
+            // TODO: see if another method is more convenient
+            mLocationManager.requestLocationUpdates(provider, mFrequency, mAccuracy / 2, this);
+        }
+    }
+
+    private void stopLocationUpdates() {
+        if (mLocationManager != null) {
+            mLocationManager.removeUpdates(this);
+        }
+    }
+
+    private void sendLocation(Location location) {
+        CobaltFragment fragment = mFragment.get();
+        if (fragment != null) {
+            try {
+                JSONObject data = new JSONObject();
+                data.put(kJSLongitude, location.getLongitude());
+                data.put(kJSLatitude, location.getLatitude());
+                if (MODE_ALL.equals(mMode)) {
+                    data.put(kJSAccuracy, location.getAccuracy());
+                    data.put(kJSTimestamp, location.getTime());
+                }
+
+                JSONObject message = new JSONObject();
+                message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
+                message.put(Cobalt.kJSPluginName, JSPluginName);
+                message.put(Cobalt.kJSAction, JSActionOnLocationChanged);
+                message.put(Cobalt.kJSData, data);
+
+                fragment.sendMessage(message);
+            }
+            catch (JSONException exception) {
                 exception.printStackTrace();
             }
         }
     }
 
-    private boolean selectionOfAction(String action) {
-        if (action.equals(GET_LOCATION)) mLocation = true;
-        else if (action.equals(GET_LONGITUDE)) mLongitude = true;
-        else if (action.equals(GET_LATITUDE)) mLatitude = true;
-        else if (action.equals(GET_ALTITUDE)) mAltitude = true;
-        else if (action.equals(GET_ACCURACY)) mAccuracy = true;
-        else return false;
-        return true;
+    private void sendStatus(String status) {
+        CobaltFragment fragment = mFragment.get();
+        if (fragment != null) {
+            try {
+                JSONObject data = new JSONObject();
+                data.put(kJSStatus, status);
+
+                JSONObject message = new JSONObject();
+                message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
+                message.put(Cobalt.kJSPluginName, JSPluginName);
+                message.put(Cobalt.kJSAction, JSActionOnStatusChanged);
+                message.put(Cobalt.kJSData, data);
+
+                fragment.sendMessage(message);
+            }
+            catch (JSONException exception) {
+                exception.printStackTrace();
+            }
+        }
     }
 
-    private Location getLocation(CobaltPluginWebContainer webContainer) {
-        mProviders = getProviders(webContainer);
-        if (mProviders.size() == 0) {
-            mFoundProvider = false;
-            return null;
+    /***********************************************************************************************
+     *
+     * LOCATION PERMISSION
+     *
+     **********************************************************************************************/
+
+    private final static int LOCATION_PERMISSION_REQUEST = 0;
+
+    private boolean checkLocationPermission(Context context) {
+        return ActivityCompat.checkSelfPermission(context, Manifest.permission_group.LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestLocationPermission(Activity activity) {
+        if (checkLocationPermission(activity)) {
+            onRequestLocationPermissionResult(true);
+        }
+        else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission_group.LOCATION)) {
+            ActivityCompat.requestPermissions(activity, new String[]{Manifest.permission_group.LOCATION}, LOCATION_PERMISSION_REQUEST);
+        }
+    }
+
+    private void onRequestLocationPermissionResult(boolean granted) {
+        if (granted) {
+            startLocationUpdates();
         }
         else {
-            mFoundProvider = true;
-
-            Location location = null;
-            for (String provider : mProviders) {
-                Location providerLocation = mLocationManager.getLastKnownLocation(provider);
-
-                if (providerLocation != null
-                    && providerLocation.getAccuracy() < ACCURACY_DEFAULT_VALUE
-                    && providerLocation.getTime() < (new Date().getTime() - TIMESTAMP_DEFAULT_VALUE)) {
-                    location = providerLocation;
-                    break;
-                }
-            }
-
-            return location;
-        }
-    }
-
-    private ArrayList<String> getProviders(CobaltPluginWebContainer webContainer) {
-        ArrayList<String> providers = new ArrayList<>();
-        Activity activity = webContainer.getActivity();
-        mLocationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
-        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            providers.add(LocationManager.GPS_PROVIDER);
-        }
-        if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-            providers.add(LocationManager.NETWORK_PROVIDER);
-        }
-
-        return providers;
-    }
-
-    private void sendLocationFound (Location location) {
-        if (location != null) {
-            JSONObject resultLocation = new JSONObject();
-            try {
-                resultLocation.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                resultLocation.put(Cobalt.kJSPluginName, LOCATION);
-                JSONObject data = new JSONObject();
-                data.put(ERROR, false);
-                JSONObject value = new JSONObject();
-                if (mLocation || mLongitude)
-                    value.put(LONGITUDE, location.getLongitude());
-                if (mLocation || mLatitude)
-                    value.put(LATITUDE, location.getLatitude());
-                if (mAltitude)
-                    value.put(ALTITUDE, location.getAltitude());
-                if (mAccuracy)
-                    value.put(ACCURACY, location.getAccuracy());
-
-                data.put(Cobalt.kJSValue, value);
-                resultLocation.put(Cobalt.kJSData, data);
-                mFragment.sendMessage(resultLocation);
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
+            sendStatus(STATUS_REFUSED);
         }
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case LOCATION_PERMISSION_REQUEST:
+                onRequestLocationPermissionResult(grantResults[0] == PackageManager.PERMISSION_GRANTED);
+            default:
+                break;
+        }
+    }
+
+    /***********************************************************************************************
+     *
+     * LOCATION LISTENER
+     *
+     **********************************************************************************************/
+
+    @Override
     public void onLocationChanged(Location location) {
-        if (location.getAccuracy() < ACCURACY_DEFAULT_VALUE) {
-            sendLocationFound(location);
+        if (MODE_ALL.equals(mMode)) {
+            sendLocation(location);
+        }
+        else if (location.getAccuracy() < mAccuracy
+                && location.getTime() < (new Date().getTime() - mTimestamp)) {
+            sendLocation(location);
             mLocationManager.removeUpdates(this);
         }
     }
 
     @Override
-    public void onStatusChanged(String s, int i, Bundle bundle) {
-
+    public void onStatusChanged(String provider, int status, Bundle bundle) {
+        switch(status) {
+            case LocationProvider.AVAILABLE:
+                onProviderEnabled(provider);
+                break;
+            case LocationProvider.OUT_OF_SERVICE:
+                onProviderDisabled(provider);
+                break;
+            // TODO: what to do in this case?
+            //case LocationProvider.TEMPORARILY_UNAVAILABLE:
+        }
     }
 
     @Override
-    public void onProviderEnabled(String s) {
-
+    public void onProviderEnabled(String provider) {
+        if (mProviders != null
+            && ! mProviders.contains(provider)) {
+            mProviders.add(provider);
+        }
     }
 
     @Override
-    public void onProviderDisabled(String s) {
+    public void onProviderDisabled(String provider) {
+        if (mProviders != null) {
+            mProviders.remove(provider);
+        }
 
+        if (mProviders.size() == 0) {
+            sendStatus(STATUS_DISABLED);
+        }
     }
 }
