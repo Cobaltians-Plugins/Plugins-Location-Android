@@ -277,7 +277,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private final static int LOCATION_PERMISSION_REQUEST = 0;
 
     private boolean checkLocationPermission(Context context) {
-        return ActivityCompat.checkSelfPermission(context, Manifest.permission_group.LOCATION) == PackageManager.PERMISSION_GRANTED;
+        return ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void requestLocationPermission(Activity activity) {
@@ -286,6 +286,9 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
         }
         else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission_group.LOCATION)) {
             ActivityCompat.requestPermissions(activity, new String[]{Manifest.permission_group.LOCATION}, LOCATION_PERMISSION_REQUEST);
+        }
+        else {
+            sendStatus(STATUS_REFUSED);
         }
     }
 
