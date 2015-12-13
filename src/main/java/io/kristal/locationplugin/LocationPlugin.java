@@ -216,7 +216,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
                     sendLocation(location);
                 }
                 else if (location.getAccuracy() < mAccuracy
-                        && location.getTime() < (new Date().getTime() - mTimestamp)) {
+                        && location.getTime() > (new Date().getTime() - mTimestamp)) {
                     sendLocation(location);
                     return;
                 }
@@ -225,7 +225,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
         for (String provider : mProviders) {
             // TODO: see if another method is more convenient
-            mLocationManager.requestLocationUpdates(provider, 0, 0, this);
+            mLocationManager.requestLocationUpdates(provider, mFrequency, 0, this);
         }
 
         if (mTimeout > 0) {
@@ -368,11 +368,12 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
             sendLocation(location);
         }
         else if (location.getAccuracy() < mAccuracy
-                && location.getTime() < (new Date().getTime() - mTimestamp)) {
+                && location.getTime() > (new Date().getTime() - mTimestamp)) {
+            mLocationManager.removeUpdates(this);
+
             if (mTimer != null) {
                 mTimer.cancel();
             }
-            mLocationManager.removeUpdates(this);
 
             sendLocation(location);
         }
@@ -403,11 +404,13 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     public void onProviderDisabled(String provider) {
         mProviders.remove(provider);
         if (mProviders.size() == 0) {
-            sendStatus(STATUS_DISABLED);
+            mLocationManager.removeUpdates(this);
 
             if (mTimer != null) {
                 mTimer.cancel();
             }
+
+            sendStatus(STATUS_DISABLED);
         }
     }
 }
