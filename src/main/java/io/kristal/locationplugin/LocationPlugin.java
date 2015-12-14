@@ -102,7 +102,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     private LocationManager mLocationManager;
     private ArrayList<String> mProviders;
     private Timer mTimer;
-    private Location mMostAccurateLocation;
+    private Location mBestLocation;
 
     protected static LocationPlugin sInstance;
 
@@ -199,17 +199,14 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
     }
 
     private void startLocationUpdates() {
-        mMostAccurateLocation = null;
+        mBestLocation = null;
 
         for (String provider : mProviders) {
             Location location = mLocationManager.getLastKnownLocation(provider);
 
             if (location != null) {
-                if (mMostAccurateLocation == null) {
-                    mMostAccurateLocation = location;
-                }
-                else if (location.getAccuracy() < mMostAccurateLocation.getAccuracy()) {
-                    mMostAccurateLocation = location;
+                if (isBetterLocation(location)) {
+                    mBestLocation = location;
                 }
 
                 if (MODE_ALL.equals(mMode)) {
@@ -283,12 +280,12 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
                 JSONObject data = new JSONObject();
                 data.put(kJSStatus, status);
 
-                if (mMostAccurateLocation != null) {
+                if (mBestLocation != null) {
                     JSONObject loc = new JSONObject();
-                    loc.put(kJSLongitude, mMostAccurateLocation.getLongitude());
-                    loc.put(kJSLatitude, mMostAccurateLocation.getLatitude());
-                    loc.put(kJSAccuracy, mMostAccurateLocation.getAccuracy());
-                    loc.put(kJSTimestamp, mMostAccurateLocation.getTime());
+                    loc.put(kJSLongitude, mBestLocation.getLongitude());
+                    loc.put(kJSLatitude, mBestLocation.getLatitude());
+                    loc.put(kJSAccuracy, mBestLocation.getAccuracy());
+                    loc.put(kJSTimestamp, mBestLocation.getTime());
                     data.put(kJSLocation, loc);
                 }
 
@@ -357,11 +354,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
     @Override
     public void onLocationChanged(Location location) {
-        if (mMostAccurateLocation == null) {
-            mMostAccurateLocation = location;
-        }
-        else if (location.getAccuracy() < mMostAccurateLocation.getAccuracy()) {
-            mMostAccurateLocation = location;
+        if (isBetterLocation(location)) {
+            mBestLocation = location;
         }
 
         if (MODE_ALL.equals(mMode)) {
@@ -412,5 +406,68 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
 
             sendStatus(STATUS_DISABLED);
         }
+    }
+
+    /***********************************************************************************************
+     *
+     * HELPERS
+     *
+     **********************************************************************************************/
+
+    /** Determines whether one Location reading is better than the current Location fix
+     * @param location  The new Location that you want to evaluate
+     */
+    private boolean isBetterLocation(Location location) {
+        if (mBestLocation == null) {
+            // A new location is always better than no location
+            return true;
+        }
+
+        // Check whether the new location fix is newer or older
+        long timeDelta = location.getTime() - mBestLocation.getTime();
+        boolean isSignificantlyNewer = timeDelta > mTimestamp;
+        boolean isSignificantlyOlder = timeDelta < -mTimestamp;
+        boolean isNewer = timeDelta > 0;
+
+        // If it's been more than two minutes since the current location,
+        // use the new location because the user has likely moved
+        if (isSignificantlyNewer) {
+            return true;
+        }
+        // If the new location is more than two minutes older, it must be worse
+        else if (isSignificantlyOlder) {
+            return false;
+        }
+
+        // Check whether the new location fix is more or less accurate
+        float accuracyDelta = location.getAccuracy() - mBestLocation.getAccuracy();
+        boolean isLessAccurate = accuracyDelta > 0;
+        boolean isMoreAccurate = accuracyDelta < 0;
+        boolean isSignificantlyLessAccurate = accuracyDelta > mAccuracy;
+
+        // Check if the old and new location are from the same provider
+        boolean isFromSameProvider = isSameProvider(location.getProvider(), mBestLocation.getProvider());
+
+        // Determine location quality using a combination of timeliness and accuracy
+        if (isMoreAccurate) {
+            return true;
+        }
+        else if (isNewer && ! isLessAccurate) {
+            return true;
+        }
+        else if (isNewer && ! isSignificantlyLessAccurate && isFromSameProvider) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /** Checks whether two providers are the same */
+    private boolean isSameProvider(String provider1, String provider2) {
+        if (provider1 == null) {
+            return provider2 == null;
+        }
+
+        return provider1.equals(provider2);
     }
 }
