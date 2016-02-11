@@ -29,10 +29,13 @@
 
 package io.kristal.locationplugin;
 
-import fr.cobaltians.cobalt.Cobalt;
-import fr.cobaltians.cobalt.fragments.CobaltFragment;
-import fr.cobaltians.cobalt.plugin.CobaltAbstractPlugin;
-import fr.cobaltians.cobalt.plugin.CobaltPluginWebContainer;
+import android.location.LocationListener;
+import android.os.Bundle;
+import org.cobaltians.cobalt.Cobalt;
+import org.cobaltians.cobalt.fragments.CobaltFragment;
+import org.cobaltians.cobalt.plugin.CobaltAbstractPlugin;
+import org.cobaltians.cobalt.plugin.CobaltPluginWebContainer;
+
 
 import android.Manifest;
 import android.app.Activity;
