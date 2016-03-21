@@ -322,8 +322,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin implements Locati
         if (checkLocationPermission(activity)) {
             onRequestLocationPermissionResult(true);
         }
-        else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission_group.LOCATION)) {
-            ActivityCompat.requestPermissions(activity, new String[]{Manifest.permission_group.LOCATION}, LOCATION_PERMISSION_REQUEST);
+        else if (ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            ActivityCompat.requestPermissions(activity, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_PERMISSION_REQUEST);
         }
         else {
             sendStatus(STATUS_REFUSED);
