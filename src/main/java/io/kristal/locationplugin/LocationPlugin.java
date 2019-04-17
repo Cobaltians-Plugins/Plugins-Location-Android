@@ -68,7 +68,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
      *
      **********************************************************************************************/
 
-    private static final String JSPluginName = "location";
+    private String JSPluginName;
 
     private static final String JSActionStartLocation = "startLocation";
     private static final String JSActionStopLocation = "stopLocation";
@@ -132,6 +132,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
     public void onMessage(CobaltPluginWebContainer webContainer, JSONObject message) {
         try {
             String action = message.getString(Cobalt.kJSAction);
+            JSPluginName =  message.getString(Cobalt.kJSPluginName);
 
             switch(action) {
                 case JSActionStartLocation:
