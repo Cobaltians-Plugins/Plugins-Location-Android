@@ -44,6 +44,7 @@ import android.location.Location;
 import android.location.LocationManager;
 import android.location.LocationProvider;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 
@@ -67,8 +68,6 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
      * MEMBERS
      *
      **********************************************************************************************/
-
-    private String JSPluginName;
 
     private static final String JSActionStartLocation = "startLocation";
     private static final String JSActionStopLocation = "stopLocation";
@@ -106,13 +105,12 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
 
     protected static LocationPlugin sInstance;
 
-    public static CobaltAbstractPlugin getInstance(CobaltPluginWebContainer webContainer) {
-        if (sInstance == null) {
+    public static CobaltAbstractPlugin getInstance()
+    {
+        if (sInstance == null)
+        {
             sInstance = new LocationPlugin();
         }
-
-        sInstance.addWebContainer(webContainer);
-
         return sInstance;
     }
 
@@ -127,19 +125,19 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
      **********************************************************************************************/
 
     private List<LocationListener> listeners;
-
+    
     @Override
-    public void onMessage(CobaltPluginWebContainer webContainer, JSONObject message) {
-        try {
-            String action = message.getString(Cobalt.kJSAction);
-            JSPluginName =  message.getString(Cobalt.kJSPluginName);
+    public void onMessage(@NonNull CobaltPluginWebContainer webContainer, @NonNull String action,
+            @Nullable JSONObject data, @Nullable String callbackChannel)
+    {
+        switch(action)
+        {
+            case JSActionStartLocation:
+                // Remove any previously registered listener for this fragment
+                removeListeningFragment(webContainer.getFragment());
 
-            switch(action) {
-                case JSActionStartLocation:
-                    // Remove any previously registered listener for this fragment
-                    removeListeningFragment(webContainer.getFragment());
-
-                    JSONObject data = message.getJSONObject(Cobalt.kJSData);
+                if (data != null)
+                {
                     String mode = data.optString(kJSMode, MODE_DEFAULT_VALUE);
                     float accuracy = (float) data.optDouble(kJSAccuracy, ACCURACY_DEFAULT_VALUE);
                     long interval = data.optLong(kJSInterval, INTERVAL_DEFAULT_VALUE);
@@ -147,27 +145,20 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
                     long timeout = data.optLong(kJSTimeout, TIMEOUT_DEFAULT_VALUE);
 
                     CobaltFragment fragment = webContainer.getFragment();
-                    LocationListener listener = new LocationListener(fragment, mode, interval, accuracy, maxAge, timeout);
+                    LocationListener listener = new LocationListener(fragment, mode, interval,
+                                                                     accuracy, maxAge, timeout);
                     addListeningFragment(listener);
-
-                    break;
-
-                case JSActionStopLocation:
-                    this.removeListeningFragment(webContainer.getFragment());
-                    break;
-
-                default:
-                    if (Cobalt.DEBUG) {
-                        Log.d(TAG, "onMessage: unknown action " + action);
-                    }
-                    break;
-            }
-        }
-        catch (JSONException exception) {
-            if (Cobalt.DEBUG) {
-                Log.d(TAG, "onMessage: action field missing or is not a string or data field is missing or is not an object. " + message.toString());
-            }
-            exception.printStackTrace();
+                }
+                break;
+            case JSActionStopLocation:
+                this.removeListeningFragment(webContainer.getFragment());
+                break;
+            default:
+                if (Cobalt.DEBUG)
+                {
+                    Log.d(TAG, "onMessage: unknown action " + action);
+                }
+                break;
         }
     }
 
@@ -188,7 +179,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
     private void removeListeningFragment(LocationListener locationListener) {
         listeners.remove(locationListener);
     }
-
+    
     /***********************************************************************************************
      *
      * LOCATION LISTENER
@@ -456,7 +447,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
 
                 JSONObject message = new JSONObject();
                 message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                message.put(Cobalt.kJSPluginName, JSPluginName);
+                // TODO: name is not available anymore, update implementation
+                //message.put(Cobalt.kJSPluginName, JSPluginName);
                 message.put(Cobalt.kJSAction, JSActionOnLocationChanged);
                 message.put(Cobalt.kJSData, data);
 
@@ -485,7 +477,8 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
 
                 JSONObject message = new JSONObject();
                 message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                message.put(Cobalt.kJSPluginName, JSPluginName);
+                // TODO: name is not available anymore, update implementation
+                //message.put(Cobalt.kJSPluginName, JSPluginName);
                 message.put(Cobalt.kJSAction, JSActionOnStatusChanged);
                 message.put(Cobalt.kJSData, data);
 
