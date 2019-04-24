@@ -447,8 +447,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
 
                 JSONObject message = new JSONObject();
                 message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                // TODO: name is not available anymore, update implementation
-                //message.put(Cobalt.kJSPluginName, JSPluginName);
+                message.put(Cobalt.kJSPluginName, "CobaltLocationPlugin");
                 message.put(Cobalt.kJSAction, JSActionOnLocationChanged);
                 message.put(Cobalt.kJSData, data);
 
@@ -477,8 +476,7 @@ public final class LocationPlugin extends CobaltAbstractPlugin {
 
                 JSONObject message = new JSONObject();
                 message.put(Cobalt.kJSType, Cobalt.JSTypePlugin);
-                // TODO: name is not available anymore, update implementation
-                //message.put(Cobalt.kJSPluginName, JSPluginName);
+                message.put(Cobalt.kJSPluginName, "CobaltLocationPlugin");
                 message.put(Cobalt.kJSAction, JSActionOnStatusChanged);
                 message.put(Cobalt.kJSData, data);
 
